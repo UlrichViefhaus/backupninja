@@ -83,6 +83,7 @@ function check_cstream() {
 getconf options
 getconf testconnect yes
 getconf nicelevel 0
+getconf ionice_params ""
 getconf bwlimit
 getconf ignore_version no
 getconf output_as_info no
@@ -269,9 +270,15 @@ set +o noglob
 # include client-part and server-part
 execstr="${execstr}$execstr_sourcepart $execstr_destpart"
 
+# include nicelevel if set
+[ $nicelevel != 0 ] && execstr="nice -n $nicelevel ${execstr}"
+
+# include ionice if set
+[ "$ionice_params" != "" ] && execstr="ionice $ionice_params ${execstr}"
+
 debug "$execstr"
 if [ $test = 0 ]; then
-   output=`nice -n $nicelevel su -c "$execstr" 2>&1`
+   output=`su -c "$execstr" 2>&1`
    if [ $? = 0 ]; then
       if [ "$output_as_info" == "yes" ]; then
          info $output
