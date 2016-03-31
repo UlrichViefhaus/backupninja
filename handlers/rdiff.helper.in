@@ -289,6 +289,19 @@ do_rdiff_adv() {
    else
       rdiff_output_as_info=no
    fi
+
+   booleanBox "$rdiff_title" "Should backupninja set a nice level?" no
+   if [ $? = 0 ]; then
+      formBegin "$rdiff_title: nice level"
+         formItem "nice" $rdiff_nice
+      formDisplay
+      [ $? = 0 ] || return
+      unset rdiff_nice
+      rdiff_nice=($REPLY)
+   else
+      rdiff_nice=
+   fi
+
 }
 
 do_rdiff_finish() {
@@ -308,6 +321,22 @@ do_rdiff_finish() {
 ## was entirely successful), this option is useful for inspecting non-fatal
 ## filesystem and permission errors from rdiff-backup.
 output_as_info = $rdiff_output_as_info
+
+## should backupninja set the nice option? (default: empty)
+## Set the nice option to configure the process priority of the rdiff process.
+nice=$rdiff_nice
+
+## should backupninja set the ionice option?
+## (default:  "" [empty string]". You can choose one of the three
+## scheduling classes idle, best-effort and realtime.
+## The classes correspond to the option "-c" with the integer values 3, 2 or 1.
+## Realtime and best-effort may have an additional priority represented
+## by the option "-n" with an integer from the range 0-7.
+## Otherall you may set it to "-c {{scheduling_class}} -n {{priority}}". 
+## See the manpage of ionice for more details.
+## an example setting would be:
+## ionice_params = "-c 2 -n 7"
+ionice_params=$rdiff_ionice_params
 
 [source]
 type = local
@@ -434,6 +463,8 @@ rdiff_wizard() {
    rdiff_user=
    rdiff_host=
    rdiff_output_as_info="no"
+   rdiff_nice=
+   rdiff_ionice_params=""
 
    # Global variables whose '*' shall not be expanded
    set -o noglob
@@ -441,7 +472,7 @@ rdiff_wizard() {
    rdiff_excludes=(/home/*/.gnupg /home/*/.local/share/Trash /home/*/.Trash /home/*/.thumbnails /home/*/.beagle /home/*/.aMule /home/*/gtk-gnutella-downloads /var/cache/backupninja/duplicity)
    rdiff_vsincludes=
    set +o noglob
-
+ 
    rdiff_main_menu
 }
 
