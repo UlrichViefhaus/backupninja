@@ -293,13 +293,25 @@ do_rdiff_adv() {
    booleanBox "$rdiff_title" "Should backupninja set a nice level?" no
    if [ $? = 0 ]; then
       formBegin "$rdiff_title: nice level"
-         formItem "nice" $rdiff_nice
+         formItem "nice" "$rdiff_nice"
       formDisplay
       [ $? = 0 ] || return
       unset rdiff_nice
-      rdiff_nice=($REPLY)
+      rdiff_nice=("$REPLY")
    else
       rdiff_nice=
+   fi
+
+   booleanBox "$rdiff_title" "Should backupninja set the ionice option?" no
+   if [ $? = 0 ]; then
+      formBegin "$rdiff_title: ionice options. Options are -c {{scheduling_class}} -n {{priority}}"
+         formItem "ionice" "$rdiff_ionice_params"
+      formDisplay
+      [ $? = 0 ] || return
+      unset rdiff_ionice_params
+      rdiff_ionice_params=("$REPLY")
+   else
+      rdiff_ionice_params=""
    fi
 
 }
