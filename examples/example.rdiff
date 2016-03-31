@@ -25,6 +25,19 @@
 ## Default
 # nicelevel = 0
 
+## default is the empty string "". You can choose one of the three
+## scheduling classes idle, best-effort and realtime.
+## The classes correspond to the option "-c" with the integer values 3, 2 or 1.
+## Realtime and best-effort may have an additional priority represented
+## by the option "-n" with an integer from the range 0-7.
+## Otherall you may set it to "-c {{scheduling_class}} -n {{priority}}". 
+## See the manpage of ionice for more details.
+## an example setting would be:
+## ionice_params = "-c 2 -n 7"
+##
+## Default
+# ionice_params = ""
+
 ## default is yes. set to no to skip the test if the remote host is alive
 ##
 ## Default:
