@@ -119,10 +119,18 @@ fi
 
 ### duplicity version (ignore anything else than 0-9 and ".")
 duplicity_version="`duplicity --version | @AWK@ '{print $2}' | @SED@ 's/[^.[:digit:]]//g'`"
-
+duplicity_version=0.7.01
 ### ssh/scp/sftp options (duplicity < 0.4.3 is unsupported)
+## duplicity < 0.7.01 : --ssh-backend removed.
+if version_ge "$duplicity_version" '0.7.01'; then
+   if [ -n "$options" ]; then
+      if echo "$options" | grep -Eqs 'ssh-backend' ; then
+         fatal "Since duplicity >= 0.7.01, --ssh-backend is removed and backup will fail.
+                \nPlease use a version of duplicity < 0.7.01 or check for an updated version of backupninja."
+      fi
+   fi
 ## duplicity >= 0.6.17 : paramiko backend
-if version_ge "$duplicity_version" '0.6.17'; then
+elif version_ge "$duplicity_version" '0.6.17'; then
    if [ -n "$sshoptions" ]; then
       if echo "$sshoptions" | grep -Eqs '^-o[[:space:]]*IdentityFile=[^ ]+$' ; then
          spaceless_sshoptions="$(echo -n "$sshoptions" | @SED@ 's/^-o[[:space:]]*/-o/')"
