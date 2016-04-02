@@ -127,6 +127,7 @@ do_dup_dest() {
         formItem "keepincroffulls" "$dup_keepincroffulls"
         formItem "bandwidthlimit" "$dup_bandwidth"
         formItem "sshoptions" "$dup_sshoptions"
+        formItem "sshbackend" "$dup_sshbackend"
       formDisplay
       [ $? = 0 ] || return 1
 
@@ -145,6 +146,7 @@ do_dup_dest() {
       dup_keepincroffulls=${thereply[6]}
       dup_bandwidth=${thereply[7]}
       dup_sshoptions=${thereply[8]}
+      dup_sshbackend=${thereply[9]}
 
    done
    set +o noglob
@@ -288,6 +290,11 @@ do_dup_adv() {
 do_dup_finish() {
    get_next_filename $configdirectory/90.dup
    cat > $next_filename <<EOF
+##
+## duplicity >= 0.7.01
+## -------------------
+## doesn't support the --ssh-backend option anymore. Please use the new sshbackend option in this configuration file.
+##
 # passed directly to duplicity
 #options = --verbosity 8
 options = $dup_options
@@ -512,6 +519,22 @@ bandwidthlimit = $dup_bandwidth
 ## Default:
 # sshoptions = 
 
+##
+## duplicity < 0.7.21
+## ------------------
+## the sshbackend option will insert "--ssh-backend $backendoption" to the options
+## passed directly to duplicity, if and only if there isn't already a backend set.
+##
+## duplicity >= 0.7.01
+## -------------------
+## suports the selection of the ssh backend only via a scheme prefix.
+## Therefor you can't use the --ssh-backend option under options anymore.
+## You can set this option to paramiko or pexpect.
+##
+## Default:
+# sshbackend = paramiko
+sshbackend = $dup_sshbackend
+
 # put the backups under this destination directory
 # if using 'desturl' above, this must not be set
 # in all other cases, this must be set!
@@ -597,6 +620,7 @@ dup_wizard() {
    dup_keepincroffulls=
    dup_bandwidth=
    dup_sshoptions=
+   dup_sshbackend="paramiko"
    dup_destdir="/backups/`hostname`"
    dup_desthost=
    dup_destuser=

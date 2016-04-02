@@ -36,6 +36,7 @@ getconf cfapikey
 getconf cfauthurl
 getconf ftp_password
 getconf sshoptions
+getconf sshbackend
 getconf bandwidthlimit 0
 getconf desthost
 getconf destdir
@@ -122,10 +123,24 @@ duplicity_version="`duplicity --version | @AWK@ '{print $2}' | @SED@ 's/[^.[:dig
 ### ssh/scp/sftp options (duplicity < 0.4.3 is unsupported)
 ## duplicity < 0.7.01 : --ssh-backend removed.
 if version_ge "$duplicity_version" '0.7.01'; then
+   #Don't accept the old --ssh-backend option and do some sed magic to extract the selected backend and the non backend options.
    if [ -n "$options" ]; then
       if echo "$options" | grep -Eqs 'ssh-backend' ; then
-         fatal "Since duplicity >= 0.7.01, --ssh-backend is removed and backup will fail.
-                \nPlease use a version of duplicity < 0.7.01 or check for an updated version of backupninja."
+         non_backend_options=`echo "$options" | sed -e 's/--ssh-backend\ *[[:alpha:]]*\ *//'`
+         backend_option=`echo "$options" | sed -e 's/.*ssh-backend\ //' -e 's/\ .*//'`
+         warning "Since duplicity >= 0.7.01, --ssh-backend is removed and backup would fail."
+         warning "The --ssh-backend option will be ignored and the new config option sshbackend will be set to $backend_option."gg
+         warning "This will override the sshbackend option from your config file."
+         warning "If you have set the desturl option sshbackend will be ignored entirely."
+         warning "Please update your config files to remove this message."
+         execstr_options="$non_backend_options --no-print-statistics"
+         sshbackend=$backend_option
+      fi
+   fi
+   #add scheme prefix to execstr_serverpart if desturl isn't set
+   if [ ! -n "$desturl" ]; then
+      if [ -n "$sshbackend" ]; then
+         execstr_serverpart="$sshbackend+$execstr_serverpart"
       fi
    fi
 ## duplicity >= 0.6.17 : paramiko backend
@@ -141,6 +156,16 @@ elif version_ge "$duplicity_version" '0.6.17'; then
       else
          warning 'duplicity >= 0.6.17 only supports the IdentityFile SSH option'
       fi
+   fi
+   # Check if options is set and contains a ssh-backend and use that. Otherwise use the value of $sshbackend for newer versions and convert it.
+   if [ -n "$options" ]; then
+      if ! echo "$options" | grep -Eqs 'ssh-backend' ; then
+         if [ -n "$sshbackend" ]; then
+            execstr_options="$execstr_options --ssh-backend $sshbackend"
+         fi
+      fi
+   else
+      execstr_options="$execstr_options --ssh-backend $sshbackend"
    fi
    execstr_options="${execstr_options} --ssh-options '$sshoptions'"
    if [ "$bandwidthlimit" != 0 ]; then
