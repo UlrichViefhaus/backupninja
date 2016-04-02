@@ -119,7 +119,6 @@ fi
 
 ### duplicity version (ignore anything else than 0-9 and ".")
 duplicity_version="`duplicity --version | @AWK@ '{print $2}' | @SED@ 's/[^.[:digit:]]//g'`"
-duplicity_version=0.7.01
 ### ssh/scp/sftp options (duplicity < 0.4.3 is unsupported)
 ## duplicity < 0.7.01 : --ssh-backend removed.
 if version_ge "$duplicity_version" '0.7.01'; then
