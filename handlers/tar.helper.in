@@ -17,7 +17,7 @@ tar_wizard() {
    tar_backupname="backupname = $REPLY"
    backupname="$REPLY"
 
-   inputBox "$tar_title" "Directory where to store the backups" "/net/backups/$backupname"
+   inputBox "$tar_title" "Directory where to store the backups" "/var/backups/tar/$backupname"
    [ $? = 1 ] && return
    tar_backupdir="backupdir = $REPLY"
 
@@ -25,7 +25,8 @@ tar_wizard() {
        "none"     "do not filter trough" off \
        "compress" "filter trough compress" off \
        "gzip"     "filter trough gzip" off \
-       "bzip"     "filter trough bzip" on
+       "bzip"     "filter trough bzip" on \
+       "xz"       "filter trough xz" off
    [ $? = 1 ] && return;
    result="$REPLY"
    tar_compress="compress = $REPLY "

@@ -24,8 +24,8 @@ getconf configfile /etc/mysql/debian.cnf
 
 # Decide if the handler should operate on a vserver or on the host.
 # In the former case, check that $vsname exists and is running.
-local usevserver=no
-local vroot
+usevserver=no
+vroot=''
 if [ $vservers_are_available = yes ]; then
    if [ -n "$vsname" ]; then
       # does it exist ?
@@ -256,10 +256,15 @@ then
    for db in $databases
    do
       DUMP_BASE="$MYSQLDUMP $defaultsfile $sqldumpoptions"
-      if [ "$db" = "information_schema" ]
-      then
-         DUMP_BASE="${DUMP_BASE} --skip-lock-tables"
-      fi
+
+      case "$db" in
+         information_schema)
+            DUMP_BASE="${DUMP_BASE} --skip-lock-tables"
+            ;;
+         performance_schema)
+            DUMP_BASE="${DUMP_BASE} --skip-lock-tables --skip-events"
+            ;;
+      esac
 
       # Dumping structure and data
       DUMP="$DUMP_BASE $ignore $db"
@@ -271,7 +276,7 @@ then
          DUMP_STRUCT="$DUMP_BASE --no-data $db"
          for qualified_table in $nodata
          do
-            table=$( expr match "$qualified_table" "$db\.\([^\w]*\)" )
+            table=$( expr match "$qualified_table" "$db\.\(.\+\)" )
             DUMP_STRUCT="$DUMP_STRUCT $table"
          done
          DUMP="( $DUMP; $DUMP_STRUCT )"
@@ -297,13 +302,13 @@ then
          if [ "$compress" == "yes" ]; then
             execstr="$DUMP | $GZIP $GZIP_OPTS > '$dumpdir/${db}.sql.gz'"
          else
-            execstr="$DUMP -r '$dumpdir/${db}.sql'"
+            execstr="$DUMP > '$dumpdir/${db}.sql'"
          fi
       fi
       debug "su $user -c \"$execstr\""
       if [ ! $test ]
       then
-         output=`su $user -c "set -o pipefail ; $execstr" 2>&1`
+         output=`su $user -s /bin/bash -c "set -o pipefail ; $execstr" 2>&1`
          code=$?
          if [ "$code" == "0" ]
          then

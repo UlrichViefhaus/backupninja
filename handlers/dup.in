@@ -2,7 +2,7 @@
 # vim: set filetype=sh sw=3 sts=3 expandtab autoindent:
 #
 # duplicity script for backupninja
-# requires duplicity
+# requires duplicity >= 0.4.4, and >= 0.4.9 when using a custom tmpdir.
 #
 
 getconf options
@@ -12,6 +12,7 @@ getconf tmpdir
 
 setsection gpg
 getconf password
+getconf signpassword
 getconf sign no
 getconf encryptkey
 getconf signkey
@@ -26,9 +27,13 @@ setsection dest
 getconf incremental yes
 getconf increments 30
 getconf keep 60
+getconf keepincroffulls all
 getconf desturl
 getconf awsaccesskeyid
 getconf awssecretaccesskey
+getconf cfusername
+getconf cfapikey
+getconf cfauthurl
 getconf ftp_password
 getconf sshoptions
 getconf bandwidthlimit 0
@@ -42,25 +47,27 @@ destdir=${destdir%/}
 [ -n "$desturl" -o -n "$destdir" ]  || fatal "The destination directory (destdir) must be set when desturl is not used."
 [ -n "$include" -o -n "$vsinclude" ]  || fatal "No source includes specified"
 [ -n "$password" ] || fatal "The password option must be set."
+[ -n "$signpassword" -a -n "$signkey" -a -n "$encryptkey" -a "$signkey" != "$encryptkey" ] || fatal "The signpassword option must be set because signkey is different from encryptkey."
 if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "s3+http" ]; then
    [ -n "$awsaccesskeyid" -a -n "$awssecretaccesskey" ]  || fatal "AWS access keys must be set for S3 backups."
 fi
-if [ "`echo "$desturl" | /usr/bin/awk -F ':' '{print $1}'`" == "file" ]; then
-   if [ ! -e `echo "$desturl" | /usr/bin/awk -F '://' '{print $2}'` ]; then
-      fatal "The destination folder $desturl does not exist. Aborting."
-   else
-      if [ ! -d `echo "$desturl" | /usr/bin/awk -F '://' '{print $2}'` ]; then
-         fatal "The destination $desturl is not a folder. Aborting."
-      fi
-   fi
+if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "cf+http" ]; then
+   [ -n "$cfusername" -a -n "$cfapikey" ]  || fatal "Cloudfiles access keys must be set for S3 backups."
 fi
 if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "ftp" ]; then
    [ -n "$ftp_password" ]  || fatal "ftp_password must be set for FTP backups."
 fi
+if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "file" ]; then
+   if [ ! -e "`echo $desturl | @AWK@ -F '://' '{print $2}'`" ]; then
+      fatal "The destination directory ($desturl) does not exist."
+   elif [ ! -d "`echo $desturl | @AWK@ -F '://' '{print $2}'`" ]; then
+      fatal "The destination ($desturl) is not a directory."
+   fi
+fi
 
 ### VServers
 # If vservers are configured, check that the ones listed in $vsnames do exist.
-local usevserver=no
+usevserver=no
 if [ $vservers_are_available = yes ]; then
    if [ "$vsnames" = all ]; then
       vsnames="$found_vservers"
@@ -97,6 +104,7 @@ fi
 ### COMMAND-LINE MANGLING ######################################################
 
 ### initialize $execstr*
+execstr_precmd='LC_ALL=C'
 execstr_command=
 execstr_options="$options --no-print-statistics"
 execstr_source=
@@ -111,38 +119,36 @@ fi
 
 ### duplicity version (ignore anything else than 0-9 and ".")
 duplicity_version="`duplicity --version | @AWK@ '{print $2}' | @SED@ 's/[^.[:digit:]]//g'`"
-duplicity_major="`echo $duplicity_version | @AWK@ -F '.' '{print $1}'`"
-duplicity_minor="`echo $duplicity_version | @AWK@ -F '.' '{print $2}'`"
-duplicity_sub="`echo $duplicity_version | @AWK@ -F '.' '{print $3}'`"
 
-### ssh/scp/sftp options
-# 1. duplicity >= 0.4.2 needs --sftp-command
-#    (NB: sftp does not support the -l option)
-# 2. duplicity 0.4.3 to 0.4.9 replace --ssh-command with --ssh-options, which is
-#    passed to scp and sftp commands by duplicity. We don't use it: since this
-#    version does not use the ssh command anymore, we keep compatibility with
-#    our previous config files by passing $sshoptions to --scp-command and
-#    --sftp-command ourselves
-
-scpoptions="$sshoptions"
-if [ "$bandwidthlimit" != 0 ]; then
-   [ -z "$desturl" ] || warning 'The bandwidthlimit option is not used when desturl is set.'
-   scpoptions="$scpoptions -l $bandwidthlimit"
-fi
-
-# < 0.4.2 : only uses ssh and scp
-if [ "$duplicity_major" -le 0 -a "$duplicity_minor" -le 4 -a "$duplicity_sub" -lt 2 ]; then
-   execstr_options="${execstr_options} --scp-command 'scp $scpoptions' --ssh-command 'ssh $sshoptions'"
-# >= 0.4.2 : also uses sftp, --sftp-command option is now supported
-else
-   sftpoptions="$sshoptions"
-   # == 0.4.2 : uses ssh, scp and sftp
-   if [ "$duplicity_major" -eq 0 -a "$duplicity_minor" -eq 4 -a "$duplicity_sub" -eq 2 ]; then
-      execstr_options="${execstr_options} --scp-command 'scp $scpoptions' --sftp-command 'sftp $sftpoptions' --ssh-command 'ssh $sshoptions'"
-   # >= 0.4.3 : uses only scp and sftp, --ssh-command option is not supported anymore
-   else
-      execstr_options="${execstr_options} --scp-command 'scp $scpoptions' --sftp-command 'sftp $sftpoptions'"
+### ssh/scp/sftp options (duplicity < 0.4.3 is unsupported)
+## duplicity >= 0.6.17 : paramiko backend
+if version_ge "$duplicity_version" '0.6.17'; then
+   if [ -n "$sshoptions" ]; then
+      if echo "$sshoptions" | grep -Eqs '^-o[[:space:]]*IdentityFile=[^ ]+$' ; then
+         spaceless_sshoptions="$(echo -n "$sshoptions" | @SED@ 's/^-o[[:space:]]*/-o/')"
+         if [ "$spaceless_sshoptions" != "$sshoptions" ] ; then
+            warning 'Since duplicity >= 0.6.17, sshoptions option requires no space between -o and IdentityFile.'
+            warning 'The bad space has been ignored. Update your duplicity handler config file to suppress this message.'
+            sshoptions="$spaceless_sshoptions"
+         fi
+      else
+         warning 'duplicity >= 0.6.17 only supports the IdentityFile SSH option'
+      fi
    fi
+   execstr_options="${execstr_options} --ssh-options '$sshoptions'"
+   if [ "$bandwidthlimit" != 0 ]; then
+      [ -z "$desturl" ] || warning 'The bandwidthlimit option is not used when desturl is set.'
+      execstr_precmd="trickle -s -d $bandwidthlimit -u $bandwidthlimit"
+   fi
+## duplicity < 0.6.17 : scp/sftp backend
+else
+   scpoptions="$sshoptions"
+   if [ "$bandwidthlimit" != 0 ]; then
+      [ -z "$desturl" ] || warning 'The bandwidthlimit option is not used when desturl is set.'
+      scpoptions="$scpoptions -l $bandwidthlimit"
+   fi
+   sftpoptions="$sshoptions"
+   execstr_options="${execstr_options} --scp-command 'scp $scpoptions' --sftp-command 'sftp $sftpoptions'"
 fi
 
 ### Symmetric or asymmetric (public/private key pair) encryption
@@ -171,12 +177,7 @@ fi
 # full backup.
 # If incremental==no, force a full backup anyway.
 if [ "$incremental" == "no" ]; then
-   # before 0.4.4, full was an option and not a command
-   if [ "$duplicity_major" -le 0 -a "$duplicity_minor" -le 4 -a "$duplicity_sub" -lt 4 ]; then
-      execstr_options="${execstr_options} --full"
-   else
-      execstr_command="full"
-   fi
+   execstr_command="full"
 else
    # we're in incremental mode
    if [ "$increments" != "keep" ]; then
@@ -189,12 +190,11 @@ else
 fi
 
 ### Cleanup options
-if [ "$duplicity_major" -ge 0 -a "$duplicity_minor" -ge 6 -a "$duplicity_sub" -ge 1 ]; then
+if ! version_ge "$duplicity_version" '0.6.20'; then
    execstr_options="${execstr_options} --extra-clean"
 fi
 
 ### Temporary directory
-precmd=
 if [ -n "$tmpdir" ]; then
    if [ ! -d "$tmpdir" ]; then
       info "Temporary directory ($tmpdir) does not exist, creating it."
@@ -203,26 +203,20 @@ if [ -n "$tmpdir" ]; then
       chmod 0700 "$tmpdir"
    fi
    info "Using $tmpdir as TMPDIR"
-   precmd="${precmd}TMPDIR=$tmpdir "
+   execstr_options="${execstr_options} --tempdir '$tmpdir'"
 fi
 
 ### Archive directory
-# duplicity >= 0.6.01 enables the archive_dir by default, let's put it into /var/cache/backupninja/duplicity
+# duplicity now enables the archive_dir by default, let's put it into /var/cache/backupninja/duplicity
 # unless the user has specified it.
-if [ "$duplicity_major" -ge 0 -a "$duplicity_minor" -ge 6 -a "$duplicity_sub" -ge 1 ]; then
-   if echo "${options}" | grep -qv -- "--archive-dir" ; then
-      execstr_options="${execstr_options} --archive-dir /var/cache/backupninja/duplicity"
-   fi
+if echo "${options}" | grep -qv -- "--archive-dir" ; then
+   execstr_options="${execstr_options} --archive-dir /var/cache/backupninja/duplicity"
 fi
 
 ### Cleanup old backup sets (or not)
 if [ "$keep" != "yes" ]; then
    if [ "`echo $keep | tr -d 0-9`" == "" ]; then
       keep="${keep}D"
-   fi
-   # before 0.4.4, remove-older-than was an option and not a command
-   if [ "$duplicity_major" -le 0 -a "$duplicity_minor" -le 4 -a "$duplicity_sub" -lt 4 ]; then
-      execstr_options="${execstr_options} --remove-older-than $keep"
    fi
 fi
 
@@ -275,63 +269,101 @@ if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "s3+http" ]; then
    export AWS_SECRET_ACCESS_KEY="$awssecretaccesskey"
 fi
 
+### If desturl is a RackSpace's CloudFiles URL export the relevant
+### environment variables
+if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "cf+http" ]; then
+   export CLOUDFILES_USERNAME="$cfusername"
+   export CLOUDFILES_APIKEY="$cfapikey"
+   if [ -n "$cfauthurl" ]; then
+      export CLOUDFILES_AUTHURL="$cfauthurl"
+   fi
+fi
+
 ### Cleanup commands (duplicity >= 0.4.4)
 
 # cleanup
-if [ "$duplicity_major" -ge 0 -a "$duplicity_minor" -ge 4 -a "$duplicity_sub" -ge 4 ]; then
-   debug "$precmd duplicity cleanup --force $execstr_options $execstr_serverpart"
-   if [ ! $test ]; then
-      export PASSPHRASE=$password
-      export FTP_PASSWORD=$ftp_password
-      output=`nice -n $nicelevel \
-         su -c \
-         "$precmd duplicity cleanup --force $execstr_options $execstr_serverpart 2>&1"`
-      exit_code=$?
-      if [ $exit_code -eq 0 ]; then
-         debug $output
-         info "Duplicity cleanup finished successfully."
-      else
-         debug $output
-         warning "Duplicity cleanup failed."
-      fi
+debug "$execstr_precmd duplicity cleanup --force $execstr_options $execstr_serverpart"
+if [ ! $test ]; then
+   export PASSPHRASE=$password
+   export SIGN_PASSPHRASE=$signpassword
+   export FTP_PASSWORD=$ftp_password
+   output=`nice -n $nicelevel \
+             su -c \
+             "$execstr_precmd duplicity cleanup --force $execstr_options $execstr_serverpart 2>&1"`
+   exit_code=$?
+   if [ $exit_code -eq 0 ]; then
+      debug $output
+      info "Duplicity cleanup finished successfully."
+   else
+      debug $output
+      warning "Duplicity cleanup failed."
    fi
 fi
 
 # remove-older-than
 if [ "$keep" != "yes" ]; then
-   if [ "$duplicity_major" -ge 0 -a "$duplicity_minor" -ge 4 -a "$duplicity_sub" -ge 4 ]; then
-      debug "$precmd duplicity remove-older-than $keep --force $execstr_options $execstr_serverpart"
-      if [ ! $test ]; then
-         export PASSPHRASE=$password
-         export FTP_PASSWORD=$ftp_password
-         output=`nice -n $nicelevel \
-                   su -c \
-                      "$precmd duplicity remove-older-than $keep --force $execstr_options $execstr_serverpart 2>&1"`
-         exit_code=$?
-         if [ $exit_code -eq 0 ]; then
-            debug $output
-            info "Duplicity remove-older-than finished successfully."
-         else
-            debug $output
-            warning "Duplicity remove-older-than failed."
+   debug "$execstr_precmd duplicity remove-older-than $keep --force $execstr_options $execstr_serverpart"
+   if [ ! $test ]; then
+      export PASSPHRASE=$password
+      export SIGN_PASSPHRASE=$signpassword
+      export FTP_PASSWORD=$ftp_password
+      output=`nice -n $nicelevel \
+                su -c \
+                "$execstr_precmd duplicity remove-older-than $keep --force $execstr_options $execstr_serverpart 2>&1"`
+      exit_code=$?
+      if [ $exit_code -eq 0 ]; then
+         debug $output
+         info "Duplicity remove-older-than finished successfully."
+      else
+         debug $output
+         warning "Duplicity remove-older-than failed."
+      fi
+   fi
+fi
+
+# remove-all-inc-of-but-n-full : remove increments of older full backups : only keep latest ones
+if [ "$keep" != "yes" ]; then
+   if [ "$keepincroffulls" != "all" ]; then
+      if version_ge "$duplicity_version" '0.6.10'; then
+         debug "$execstr_precmd duplicity remove-all-inc-of-but-n-full $keepincroffulls --force $execstr_options $execstr_serverpart"
+         if [ ! $test ]; then
+            export PASSPHRASE=$password
+            export SIGN_PASSPHRASE=$signpassword
+            export FTP_PASSWORD=$ftp_password
+            output=`nice -n $nicelevel \
+               su -c \
+               "$execstr_precmd duplicity remove-all-inc-of-but-n-full $keepincroffulls --force $execstr_options $execstr_serverpart 2>&1"`
+            exit_code=$?
+            if [ $exit_code -eq 0 ]; then
+               debug $output
+               info "Duplicity remove-all-inc-of-but-n-full finished successfully."
+            else
+               debug $output
+               warning "Duplicity remove-all-inc-of-but-n-full failed."
+            fi
          fi
       fi
    fi
 fi
 
 ### Backup command
-debug "$precmd duplicity $execstr_command $execstr_options $execstr_source --exclude '**' / $execstr_serverpart"
+debug "$execstr_precmd duplicity $execstr_command $execstr_options $execstr_source --exclude '**' / $execstr_serverpart"
 if [ ! $test ]; then
    outputfile=`maketemp backupout`
    export PASSPHRASE=$password
+   export SIGN_PASSPHRASE=$signpassword
    export FTP_PASSWORD=$ftp_password
    output=`nice -n $nicelevel \
              su -c \
-                "$precmd duplicity $execstr_command $execstr_options $execstr_source --exclude '**' / $execstr_serverpart >$outputfile 2>&1"`
+                "$execstr_precmd duplicity $execstr_command $execstr_options $execstr_source --exclude '**' / $execstr_serverpart >$outputfile 2>&1"`
    exit_code=$?
    debug $output
    cat $outputfile | (while read output ; do
-                         info $output
+                         if [ $exit_code -eq 0 ]; then
+                            info $output
+                         else
+                            error $output
+                         fi
                       done
    )
    if [ $exit_code -eq 0 ]; then

@@ -56,7 +56,7 @@
 
 ## when set to yes, encryptkey variable must be set below; if you want to use
 ## two different keys for encryption and signing, you must also set the signkey
-## variable below.
+## variable (and probably signpassword) below.
 ## default is set to no, for backwards compatibility with backupninja <= 0.5.
 ##
 ## Default:
@@ -77,13 +77,22 @@
 ## Default:
 # signkey = 
 
-## password
-## NB: neither quote this, nor should it contain any quotes, 
+## password used to unlock the encryption key
+## NB: neither quote this, nor should it contain any quotes,
 ## an example setting would be:
 ## password = a_very_complicated_passphrase
 ##
 ## Default:
 # password = 
+
+## password used to unlock the signature key, used only if
+## it differs from the encryption key
+## NB: neither quote this, nor should it contain any quotes,
+## an example setting would be:
+## signpassword = a_very_complicated_passphrase
+##
+## Default:
+# signpassword =
 
 ######################################################
 ## source section
@@ -164,6 +173,14 @@ exclude = /var/cache/backupninja/duplicity
 ## Default:
 # keep = 60
 
+# for how many full backups do we keep their later increments ;
+# default is all (keep all increments).
+# increments for older full backups will be deleted : only the more
+# recent ones (count provided) will be kept
+#
+## Default:
+# keepincroffulls = all
+
 ## full destination URL, in duplicity format; if set, desturl overrides
 ## sshoptions, destdir, desthost and destuser; it also disables testconnect and
 ## bandwithlimit. For details, see duplicity manpage, section "URL FORMAT", some
@@ -186,24 +203,42 @@ exclude = /var/cache/backupninja/duplicity
 # awsaccesskeyid = 
 # awssecretaccesskey = 
 
+## RackSpace's CloudFiles username, API key, and authentication URL.
+## cfusername = YOUR_CF_USERNAME
+## cfapikey = YOUR_CF_API_KEY
+## cfauthurl = YOUR_CF_AUTH_URL
+##
+## Default:
+# cfusername = 
+# cfapikey = 
+# cfauthurl = 
+
 ## FTP password, needed for backups using desturl = ftp://...
 ##
 ## Default:
 # ftp_password = 
 
-## bandwith limit, in kbit/s ; default is 0, i.e. no limit
+## bandwith limit, in Kbit/s ; default is 0, i.e. no limit
 ## if using 'desturl' above, 'bandwidthlimit' must not be set
-## an example setting of 128 kbps would be:
+## an example setting of 128 Kbit/s would be:
 ## bandwidthlimit = 128
 ##
 ## Default:
 # bandwidthlimit = 0
 
+## duplicity < 0.6.17
+## ------------------
 ## passed directly to ssh, scp (and sftp in duplicity >=0.4.2)
 ## warning: sftp does not support all scp options, especially -i; as
 ## a workaround, you can use "-o <SSHOPTION>"
 ## an example setting would be:
-## sshoptions = -o IdentityFile=/root/.ssh/id_dsa_duplicity
+## sshoptions = -o IdentityFile=/root/.ssh/id_rsa_duplicity
+##
+## duplicity >= 0.6.17
+## -------------------
+## supports only "-oIdentityFile=..." since duplicity >=0.6.17 uses paramiko,
+## a ssh python module.
+## warning: requires no space beetween "-o" and "IdentityFile=...".
 ##
 ## Default:
 # sshoptions = 

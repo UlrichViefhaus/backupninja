@@ -85,6 +85,7 @@ getconf testconnect yes
 getconf nicelevel 0
 getconf bwlimit
 getconf ignore_version no
+getconf output_as_info no
 
 setsection source
 getconf type; sourcetype=$type
@@ -115,7 +116,7 @@ fi
 ### CHECK CONFIG ###
 
 # If vservers are configured, check that the ones listed in $vsnames do exist.
-local usevserver=no
+usevserver=no
 if [ $vservers_are_available = yes ]; then
    if [ "$vsnames" = all ]; then
       vsnames="$found_vservers"
@@ -182,7 +183,11 @@ if [ "$keep" != yes ]; then
    if [ $test = 0 ]; then
       output="`su -c "$removestr" 2>&1`"
       if [ $? = 0 ]; then
-         debug $output
+         if [ "$output_as_info" == "yes" ]; then
+            info $output
+         else
+            debug $output
+         fi
          info "Removing backups older than $keep days succeeded."
       else
          warning $output
@@ -219,7 +224,10 @@ SAVEIFS=$IFS
 IFS=$(echo -en "\n\b")
 for i in $exclude; do
    str="${i//__star__/*}"
-   execstr="${execstr}--exclude '$str' "
+   case "$str" in
+      @*) execstr="${execstr}--exclude-globbing-filelist '${str#@}' " ;;
+      *) execstr="${execstr}--exclude '$str' " ;;
+   esac
 done
 IFS=$SAVEIFS
 # includes
@@ -228,7 +236,10 @@ IFS=$(echo -en "\n\b")
 for i in $include; do
    [ "$i" != "/" ] || fatal "Sorry, you cannot use 'include = /'"
    str="${i//__star__/*}"
-   execstr="${execstr}--include '$str' "
+   case "$str" in
+   @*) execstr="${execstr}--include-globbing-filelist '${str#@}' " ;;
+   *) execstr="${execstr}--include '$str' " ;;
+   esac
 done
 IFS=$SAVEIFS
 
@@ -262,11 +273,15 @@ debug "$execstr"
 if [ $test = 0 ]; then
    output=`nice -n $nicelevel su -c "$execstr" 2>&1`
    if [ $? = 0 ]; then
-      debug $output
+      if [ "$output_as_info" == "yes" ]; then
+         info $output
+      else
+         debug $output
+      fi
       info "Successfully finished backing up source $label"
    else
-      warning $output
-      warning "Failed backup up source $label"
+      error $output
+      fatal "Failed backup up source $label"
    fi
 fi
 
