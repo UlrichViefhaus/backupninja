@@ -45,6 +45,15 @@ destdir=${destdir%/}
 if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "s3+http" ]; then
    [ -n "$awsaccesskeyid" -a -n "$awssecretaccesskey" ]  || fatal "AWS access keys must be set for S3 backups."
 fi
+if [ "`echo "$desturl" | /usr/bin/awk -F ':' '{print $1}'`" == "file" ]; then
+   if [ ! -e `echo "$desturl" | /usr/bin/awk -F '://' '{print $2}'` ]; then
+      fatal "The destination folder $desturl does not exist. Aborting."
+   else
+      if [ ! -d `echo "$desturl" | /usr/bin/awk -F '://' '{print $2}'` ]; then
+         fatal "The destination $desturl is not a folder. Aborting."
+      fi
+   fi
+fi
 if [ "`echo $desturl | @AWK@ -F ':' '{print $1}'`" == "ftp" ]; then
    [ -n "$ftp_password" ]  || fatal "ftp_password must be set for FTP backups."
 fi
